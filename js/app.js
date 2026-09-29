@@ -97,7 +97,7 @@ async function photoUrl(id) {
   if (photoUrlCache.has(id)) return photoUrlCache.get(id);
   const rec = await DB.get('photos', id);
   if (!rec) return '';
-  const url = URL.createObjectURL(rec.blob);
+  const url = URL.createObjectURL(photoBlob(rec));
   photoUrlCache.set(id, url);
   return url;
 }
@@ -129,6 +129,17 @@ function compressImage(file, maxSize = 1600, quality = 0.82) {
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('画像を読み込めませんでした')); };
     img.src = url;
   });
+}
+
+// iPhone の Safari は IndexedDB に Blob を保存すると失敗することがあるため、
+// 写真は ArrayBuffer として保存する（古い形式の blob も読めるようにしておく）
+function photoBlob(rec) {
+  return rec.blob || new Blob([rec.data], { type: rec.type || 'image/jpeg' });
+}
+
+async function photoRecord(id, blob) {
+  const data = blob.arrayBuffer ? await blob.arrayBuffer() : await new Response(blob).arrayBuffer();
+  return { id, data, type: blob.type || 'image/jpeg' };
 }
 
 function blobToDataURL(blob) {
@@ -548,6 +559,23 @@ async function renderVisitForm(visitId, presetStoreId) {
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    const btn = form.querySelector('button[type=submit]');
+    if (btn.disabled) return;
+    btn.disabled = true;
+    const label = btn.textContent;
+    btn.textContent = '保存中…';
+    try {
+      await saveVisit();
+    } catch (err) {
+      console.error(err);
+      alert(`保存できませんでした。\n（${err && (err.message || err.name) || err}）`);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = label;
+    }
+  });
+
+  async function saveVisit() {
     const fd = new FormData(form);
     let storeId = fd.get('storeId');
     if (!storeId) {
@@ -579,7 +607,7 @@ async function renderVisitForm(visitId, presetStoreId) {
       .filter((i) => i.name || i.custom);
 
     const newPhotos = photos.filter((p) => p.isNew);
-    if (newPhotos.length) await DB.putMany('photos', newPhotos.map((p) => ({ id: p.id, blob: p.blob })));
+    if (newPhotos.length) await DB.putMany('photos', await Promise.all(newPhotos.map((p) => photoRecord(p.id, p.blob))));
     if (editing) {
       const removed = editing.photoIds.filter((id) => !photos.some((p) => p.id === id));
       if (removed.length) await DB.delMany('photos', removed);
@@ -602,7 +630,7 @@ async function renderVisitForm(visitId, presetStoreId) {
 
     toast(editing ? '保存しました' : '記録しました ☕');
     location.hash = `#/store/${storeId}`;
-  });
+  }
 
   document.getElementById('deleteVisit')?.addEventListener('click', async () => {
     if (!confirm('この記録を削除しますか？（写真も削除されます）')) return;
@@ -731,7 +759,7 @@ async function exportBackup() {
     exportedAt: new Date().toISOString(),
     stores: state.stores,
     visits: state.visits,
-    photos: await Promise.all(photos.map(async (p) => ({ id: p.id, data: await blobToDataURL(p.blob) }))),
+    photos: await Promise.all(photos.map(async (p) => ({ id: p.id, data: await blobToDataURL(photoBlob(p)) }))),
   };
   const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
   const name = `スタバ日記バックアップ_${todayStr()}.json`;
@@ -756,7 +784,7 @@ async function importBackup(file) {
   try {
     const data = JSON.parse(await file.text());
     if (data.app !== 'starbucks-log') throw new Error('スタバ日記のバックアップファイルではありません');
-    const photos = await Promise.all((data.photos || []).map(async (p) => ({ id: p.id, blob: await dataURLToBlob(p.data) })));
+    const photos = await Promise.all((data.photos || []).map(async (p) => photoRecord(p.id, await dataURLToBlob(p.data))));
     await DB.putMany('photos', photos);
     await DB.putMany('stores', data.stores || []);
     await DB.putMany('visits', data.visits || []);
@@ -814,6 +842,10 @@ document.addEventListener('click', (e) => {
 $lightbox.addEventListener('click', () => { $lightbox.hidden = true; });
 
 window.addEventListener('hashchange', route);
+
+// 想定外のエラーは画面に出す（何も起きないように見えるのを防ぐ）
+window.addEventListener('error', (e) => toast(`エラー：${e.message}`));
+window.addEventListener('unhandledrejection', (e) => toast(`エラー：${(e.reason && e.reason.message) || e.reason}`));
 
 (async () => {
   try {
