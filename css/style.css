@@ -28,11 +28,14 @@
 
 html { -webkit-text-size-adjust: 100%; }
 
+button, input, select, textarea { font-family: inherit; }
+
 body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", sans-serif;
+  /* 日本語フォントを優先（中国語フォントで表示されないように） */
+  font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "BIZ UDPGothic", "Yu Gothic Medium", "Yu Gothic", YuGothic, Meiryo, sans-serif;
   font-size: 17px;
   line-height: 1.6;
   padding-bottom: calc(var(--tab-h) + env(safe-area-inset-bottom) + 16px);
