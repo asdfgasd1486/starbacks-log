@@ -710,11 +710,35 @@ function renderStoreEdit(id) {
   });
 }
 
+// ---------- 画面の明るさ ----------
+const THEMES = [['auto', '自動'], ['light', 'ライト'], ['dark', 'ダーク']];
+
+function getTheme() {
+  const t = document.documentElement.dataset.theme;
+  return t === 'light' || t === 'dark' ? t : 'auto';
+}
+
+function setTheme(theme) {
+  if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+  else delete document.documentElement.dataset.theme;
+  try {
+    if (theme === 'auto') localStorage.removeItem('theme');
+    else localStorage.setItem('theme', theme);
+  } catch (err) { /* 保存できなくても今の画面には反映される */ }
+}
+
 // ---------- 画面: 設定（バックアップ） ----------
 function renderSettings() {
   setHeader('設定・バックアップ');
   $view.innerHTML = `
     ${statsHtml()}
+    <section class="card">
+      <h3>画面の明るさ</h3>
+      <div class="segmented" role="radiogroup" aria-label="画面の明るさ">
+        ${THEMES.map(([k, label]) => `<button type="button" role="radio" data-theme-choice="${k}" aria-checked="${getTheme() === k}" class="${getTheme() === k ? 'on' : ''}">${label}</button>`).join('')}
+      </div>
+      <p class="hint" style="margin:8px 0 0">「自動」は端末の設定（ダークモード）に合わせます。</p>
+    </section>
     <section class="card">
       <h3>バックアップ</h3>
       <p class="hint">記録と写真は<b>この端末のブラウザの中</b>に保存されています。機種変更やブラウザのデータ削除に備えて、ときどきバックアップファイルを保存しておくと安心です。</p>
@@ -733,6 +757,13 @@ function renderSettings() {
       <button class="btn danger" id="clearBtn">すべてのデータを削除</button>
     </section>`;
 
+  $view.querySelectorAll('[data-theme-choice]').forEach((b) => b.addEventListener('click', () => {
+    setTheme(b.dataset.themeChoice);
+    $view.querySelectorAll('[data-theme-choice]').forEach((x) => {
+      x.classList.toggle('on', x === b);
+      x.setAttribute('aria-checked', String(x === b));
+    });
+  }));
   document.getElementById('exportBtn').addEventListener('click', exportBackup);
   document.getElementById('importInput').addEventListener('change', async (e) => {
     const f = e.target.files[0];
